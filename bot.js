@@ -1,28 +1,46 @@
-// api/send-to-bot.js   (use this exact path for static Vercel projects)
+// api/send-to-bot.js  (Vercel serverless function - Pages Router style)
 
 export default async function handler(req, res) {
-  // Only allow POST requests from your Mini App
+  // Allow CORS from Telegram WebView origins
+  const allowedOrigins = [
+    'https://web.telegram.org',
+    'https://webk.telegram.org',   // web K version
+    'https://web.telegram.org/k/'  // sometimes seen
+  ];
+
+  const origin = req.headers.origin;
+
+  // Set CORS headers for all responses (including errors & OPTIONS)
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(origin) ? origin : '*'); // or strict: origin if matched
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight OPTIONS request (browser sends this before POST)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Only allow POST after preflight
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed – Use POST' });
   }
 
-  const { data, userId } = req.body || {};
+  const { choice, timestamp, user } = req.body || {};
 
-  if (!data) {
-    return res.status(400).json({ error: 'Missing data in request body' });
+  if (!choice) {
+    return res.status(400).json({ error: 'Missing choice in request body' });
   }
 
-  // Load secrets from Vercel Environment Variables
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  const YOUR_CHAT_ID = process.env.YOUR_CHAT_ID;  // your personal Telegram user ID (number)
+  const YOUR_CHAT_ID = process.env.YOUR_CHAT_ID;
 
   if (!BOT_TOKEN || !YOUR_CHAT_ID) {
-    console.error('Missing BOT_TOKEN or YOUR_CHAT_ID in env vars');
+    console.error('Missing env vars');
     return res.status(500).json({ error: 'Server configuration error' });
   }
 
-  // Build the message you want to receive in your Telegram
-  const messageText = `Mini App data received:\n\`\`\`\n${JSON.stringify(data, null, 2)}\n\`\`\`\nFrom user: ${userId || 'unknown'}\nTime: ${new Date().toISOString()}`;
+  const messageText = `Mini App choice:\n\`\`\`\nChoice: ${choice}\nTime: ${timestamp}\nUser: ${user?.first_name || 'Unknown'} (ID: ${user?.id || 'unknown'})\n\`\`\``;
 
   try {
     const telegramResponse = await fetch(
@@ -33,7 +51,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           chat_id: YOUR_CHAT_ID,
           text: messageText,
-          parse_mode: 'MarkdownV2',  // Better for code blocks
+          parse_mode: 'MarkdownV2',
         }),
       }
     );
@@ -41,15 +59,12 @@ export default async function handler(req, res) {
     const result = await telegramResponse.json();
 
     if (!result.ok) {
-      throw new Error(result.description || 'Telegram sendMessage failed');
+      throw new Error(result.description || 'Telegram API error');
     }
 
-    return res.status(200).json({
-      success: true,
-      message: 'Data forwarded to your Telegram',
-    });
+    return res.status(200).json({ success: true, message: 'Sent to your Telegram' });
   } catch (error) {
-    console.error('Error forwarding to Telegram:', error);
+    console.error('Error:', error);
     return res.status(500).json({ error: 'Failed to forward message' });
   }
 }
