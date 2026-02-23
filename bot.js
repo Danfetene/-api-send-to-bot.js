@@ -1,70 +1,63 @@
-// api/send-to-bot.js  (Vercel serverless function - Pages Router style)
+// api/notify-me.js
 
 export default async function handler(req, res) {
-  // Allow CORS from Telegram WebView origins
-  const allowedOrigins = [
-    'https://web.telegram.org',
-    'https://webk.telegram.org',   // web K version
-    'https://web.telegram.org/k/'  // sometimes seen
-  ];
+  // Handle CORS (important for Telegram WebView)
+  res.setHeader('Access-Control-Allow-Origin', '*');           // or tighten later
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  const origin = req.headers.origin;
-
-  // Set CORS headers for all responses (including errors & OPTIONS)
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(origin) ? origin : '*'); // or strict: origin if matched
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-  // Handle preflight OPTIONS request (browser sends this before POST)
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // Only allow POST after preflight
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed – Use POST' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { choice, timestamp, user } = req.body || {};
+  const body = req.body || {};
+  const { choice, timestamp, user } = body;
 
   if (!choice) {
-    return res.status(400).json({ error: 'Missing choice in request body' });
+    return res.status(400).json({ error: 'Missing choice' });
   }
 
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  const YOUR_CHAT_ID = process.env.YOUR_CHAT_ID;
+  const CHAT_ID = process.env.YOUR_CHAT_ID;
 
-  if (!BOT_TOKEN || !YOUR_CHAT_ID) {
-    console.error('Missing env vars');
-    return res.status(500).json({ error: 'Server configuration error' });
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.error('Missing BOT_TOKEN or YOUR_CHAT_ID');
+    return res.status(500).json({ error: 'Server misconfigured' });
   }
 
-  const messageText = `Mini App choice:\n\`\`\`\nChoice: ${choice}\nTime: ${timestamp}\nUser: ${user?.first_name || 'Unknown'} (ID: ${user?.id || 'unknown'})\n\`\`\``;
+  const text = 
+`Mini App choice received:
+• Choice: **${choice}**
+• Time: ${timestamp || new Date().toISOString()}
+• User: ${user?.first_name || 'Unknown'} (${user?.id || '?'})`;
 
   try {
-    const telegramResponse = await fetch(
+    const telegramRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: YOUR_CHAT_ID,
-          text: messageText,
-          parse_mode: 'MarkdownV2',
-        }),
+          chat_id: CHAT_ID,
+          text: text,
+          parse_mode: 'Markdown'
+        })
       }
     );
 
-    const result = await telegramResponse.json();
+    const result = await telegramRes.json();
 
     if (!result.ok) {
-      throw new Error(result.description || 'Telegram API error');
+      throw new Error(result.description || 'Telegram error');
     }
 
-    return res.status(200).json({ success: true, message: 'Sent to your Telegram' });
-  } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({ error: 'Failed to forward message' });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Failed to send message' });
   }
 }
